@@ -227,6 +227,24 @@ progress(typename container::const_iterator i, const container &c)
 	}
 }
 
+// Escape a string for JSON output
+static string
+json_escape(const string &s)
+{
+	string r;
+	for (string::const_iterator i = s.begin(); i != s.end(); i++) {
+		switch (*i) {
+		case '"': r += "\\\""; break;
+		case '\\': r += "\\\\"; break;
+		case '\n': r += "\\n"; break;
+		case '\r': r += "\\r"; break;
+		case '\t': r += "\\t"; break;
+		default: r += *i; break;
+		}
+	}
+	return r;
+}
+
 // Display an identifier hyperlink
 static void
 html(FILE *of, const IdPropElem &i)
@@ -3463,6 +3481,299 @@ merge_tokens(char **argv)
 	exit(0);
 }
 
+// ---- REST/JSON API handlers ----
+
+// GET /api/identifiers
+// Returns all identifiers with their attributes as a JSON array
+static int
+api_identifiers(FILE *of, void *)
+{
+	swill_setheader("content-type", "application/json");
+
+	fprintf(of, "[");
+	bool first = true;
+	for (IdProp::iterator i = ids.begin(); i != ids.end(); i++) {
+		Eclass *e = i->first;
+		Identifier &id = i->second;
+		if (!first) fprintf(of, ",");
+		first = false;
+		fprintf(of, "{\"eid\":\"%p\","
+			"\"name\":\"%s\","
+			"\"readonly\":%s,"
+			"\"macro\":%s,"
+			"\"macroarg\":%s,"
+			"\"ordinary\":%s,"
+			"\"suetag\":%s,"
+			"\"sumember\":%s,"
+			"\"label\":%s,"
+			"\"typedef\":%s,"
+			"\"enumeration\":%s,"
+			"\"yacc\":%s,"
+			"\"fun\":%s,"
+			"\"cscope\":%s,"
+			"\"lscope\":%s,"
+			"\"unused\":%s,"
+			"\"xfile\":%s}",
+			(void *)e,
+			json_escape(id.get_id()).c_str(),
+			e->get_attribute(is_readonly) ? "true" : "false",
+			e->get_attribute(is_macro) ? "true" : "false",
+			e->get_attribute(is_macro_arg) ? "true" : "false",
+			e->get_attribute(is_ordinary) ? "true" : "false",
+			e->get_attribute(is_suetag) ? "true" : "false",
+			e->get_attribute(is_sumember) ? "true" : "false",
+			e->get_attribute(is_label) ? "true" : "false",
+			e->get_attribute(is_typedef) ? "true" : "false",
+			e->get_attribute(is_enumeration) ? "true" : "false",
+			e->get_attribute(is_yacc) ? "true" : "false",
+			e->get_attribute(is_cfunction) ? "true" : "false",
+			e->get_attribute(is_cscope) ? "true" : "false",
+			e->get_attribute(is_lscope) ? "true" : "false",
+			e->is_unused() ? "true" : "false",
+			id.get_xfile() ? "true" : "false");
+	}
+	fprintf(of, "]");
+	return 0;
+}
+
+// GET /api/files
+// Returns all files with their details as a JSON array
+static int
+api_files(FILE *of, void *)
+{
+	swill_setheader("content-type", "application/json");
+
+	vector <Fileid> files = Fileid::files(true);
+	fprintf(of, "[");
+	bool first = true;
+	for (vector <Fileid>::iterator i = files.begin(); i != files.end(); i++) {
+		if (!first) fprintf(of, ",");
+		first = false;
+		fprintf(of, "{\"fid\":%d,"
+			"\"name\":\"%s\","
+			"\"readonly\":%s}",
+			i->get_id(),
+			json_escape(i->get_path()).c_str(),
+			i->get_readonly() ? "true" : "false");
+	}
+	fprintf(of, "]");
+	return 0;
+}
+
+// GET /api/functions
+// Returns all functions with their details as a JSON array
+static int
+api_functions(FILE *of, void *)
+{
+	swill_setheader("content-type", "application/json");
+
+	fprintf(of, "[");
+	bool first = true;
+	for (Call::const_fmap_iterator_type i = Call::fbegin(); i != Call::fend(); i++) {
+		Call *fun = i->second;
+		if (!first) fprintf(of, ",");
+		first = false;
+		fprintf(of, "{\"id\":\"%p\","
+			"\"name\":\"%s\","
+			"\"is_macro\":%s,"
+			"\"is_defined\":%s,"
+			"\"is_declared\":%s,"
+			"\"is_file_scoped\":%s,"
+			"\"fid\":%d,"
+			"\"fanin\":%d,"
+			"\"fanout\":%d}",
+			(void *)fun,
+			json_escape(fun->get_name()).c_str(),
+			fun->is_macro() ? "true" : "false",
+			fun->is_defined() ? "true" : "false",
+			fun->is_declared() ? "true" : "false",
+			fun->is_file_scoped() ? "true" : "false",
+			fun->get_fileid().get_id(),
+			fun->get_num_caller(),
+			fun->get_num_call());
+	}
+	fprintf(of, "]");
+	return 0;
+}
+
+// GET /api/projects
+// Returns all projects as a JSON array
+static int
+api_projects(FILE *of, void *)
+{
+	swill_setheader("content-type", "application/json");
+
+	const Project::proj_map_type &m = Project::get_project_map();
+	fprintf(of, "[");
+	bool first = true;
+	for (Project::proj_map_type::const_iterator i = m.begin(); i != m.end(); i++) {
+		if (!first) fprintf(of, ",");
+		first = false;
+		fprintf(of, "{\"pid\":%d,\"name\":\"%s\"}",
+			(int)i->second,
+			json_escape(i->first).c_str());
+	}
+	fprintf(of, "]");
+	return 0;
+}
+
+// GET /api/id?id=EID
+// Returns a single identifier's details and all its locations
+static int
+api_id(FILE *of, void *)
+{
+	swill_setheader("content-type", "application/json");
+
+	Eclass *e;
+	if (!swill_getargs("p(id)", &e)) {
+		fprintf(of, "{\"error\":\"Missing or invalid id parameter\"}");
+		return 0;
+	}
+
+	IdProp::iterator idi = ids.find(e);
+	if (idi == ids.end()) {
+		fprintf(of, "{\"error\":\"Identifier not found\"}");
+		return 0;
+	}
+
+	Identifier &id = idi->second;
+	fprintf(of, "{\"eid\":\"%p\","
+		"\"name\":\"%s\","
+		"\"unused\":%s,"
+		"\"xfile\":%s,"
+		"\"locations\":[",
+		(void *)e,
+		json_escape(id.get_id()).c_str(),
+		e->is_unused() ? "true" : "false",
+		id.get_xfile() ? "true" : "false");
+
+	// Output all locations for this identifier
+	const setTokid &members = e->get_members();
+	bool first = true;
+	for (setTokid::const_iterator j = members.begin(); j != members.end(); j++) {
+		if (!first) fprintf(of, ",");
+		first = false;
+		int line = Filedetails::get_line_number(j->get_fileid(), j->get_streampos());
+		fprintf(of, "{\"fid\":%d,"
+			"\"file\":\"%s\","
+			"\"line\":%d,"
+			"\"offset\":%lu}",
+			j->get_fileid().get_id(),
+			json_escape(j->get_fileid().get_path()).c_str(),
+			line,
+			(unsigned long)j->get_streampos());
+	}
+	fprintf(of, "]}");
+	return 0;
+}
+
+// GET /api/funcs?callers=FID or /api/funcs?callees=FID
+// Returns callers or callees of a function as a JSON array
+static int
+api_funcs(FILE *of, void *)
+{
+	swill_setheader("content-type", "application/json");
+
+	Call *f;
+	bool want_callers = false;
+	bool want_callees = false;
+
+	if (swill_getargs("p(callers)", &f)) {
+		want_callers = true;
+	} else if (swill_getargs("p(callees)", &f)) {
+		want_callees = true;
+	} else {
+		fprintf(of, "{\"error\":\"Missing callers or callees parameter\"}");
+		return 0;
+	}
+
+	fprintf(of, "[");
+	bool first = true;
+
+	if (want_callers) {
+		for (Call::const_fiterator_type i = f->caller_begin(); i != f->caller_end(); i++) {
+			if (!first) fprintf(of, ",");
+			first = false;
+			fprintf(of, "{\"id\":\"%p\",\"name\":\"%s\"}",
+				(void *)*i,
+				json_escape((*i)->get_name()).c_str());
+		}
+	} else if (want_callees) {
+		for (Call::const_fiterator_type i = f->call_begin(); i != f->call_end(); i++) {
+			if (!first) fprintf(of, ",");
+			first = false;
+			fprintf(of, "{\"id\":\"%p\",\"name\":\"%s\"}",
+				(void *)*i,
+				json_escape((*i)->get_name()).c_str());
+		}
+	}
+
+	fprintf(of, "]");
+	return 0;
+}
+
+// GET /api/filemetrics?id=FID
+// Returns metrics for a single file as a JSON object
+static int
+api_filemetrics(FILE *of, void *)
+{
+	swill_setheader("content-type", "application/json");
+
+	int fid;
+	if (!swill_getargs("i(id)", &fid)) {
+		fprintf(of, "{\"error\":\"Missing or invalid id parameter\"}");
+		return 0;
+	}
+
+	Fileid fi(fid);
+	fprintf(of, "{\"fid\":%d,\"name\":\"%s\",\"metrics\":{",
+		fid, json_escape(fi.get_path()).c_str());
+
+	bool first = true;
+	for (int j = 0; j < FileMetrics::metric_max; j++) {
+		if (Metrics::is_internal<FileMetrics>(j))
+			continue;
+		if (!first) fprintf(of, ",");
+		first = false;
+		fprintf(of, "\"%s\":%g",
+			Metrics::get_dbfield<FileMetrics>(j).c_str(),
+			Filedetails::get_pre_cpp_metrics(fi).get_metric(j));
+	}
+
+	fprintf(of, "}}");
+	return 0;
+}
+
+// GET /api/projectfiles?projid=PID
+// Returns all files belonging to a project as a JSON array
+static int
+api_projectfiles(FILE *of, void *)
+{
+	swill_setheader("content-type", "application/json");
+
+	int pid;
+	if (!swill_getargs("i(projid)", &pid)) {
+		fprintf(of, "{\"error\":\"Missing or invalid projid parameter\"}");
+		return 0;
+	}
+
+	vector <Fileid> files = Fileid::files(true);
+	fprintf(of, "[");
+	bool first = true;
+	for (vector <Fileid>::iterator i = files.begin(); i != files.end(); i++) {
+		if (!Filedetails::get_attribute(*i, pid))
+			continue;
+		if (!first) fprintf(of, ",");
+		first = false;
+		fprintf(of, "{\"fid\":%d,\"name\":\"%s\",\"readonly\":%s}",
+			i->get_id(),
+			json_escape(i->get_path()).c_str(),
+			i->get_readonly() ? "true" : "false");
+	}
+	fprintf(of, "]");
+	return 0;
+}
+
 int
 main(int argc, char *argv[])
 {
@@ -3750,6 +4061,15 @@ main(int argc, char *argv[])
 		swill_handle("setproj.html", set_project_page, NULL);
 		swill_handle("logo.png", logo_page, NULL);
 		swill_handle("index.html", index_page, 0);
+		// REST/JSON API endpoints
+		swill_handle("api/identifiers", api_identifiers, NULL);
+		swill_handle("api/files", api_files, NULL);
+		swill_handle("api/functions", api_functions, NULL);
+		swill_handle("api/projects", api_projects, NULL);
+		swill_handle("api/id", api_id, NULL);
+		swill_handle("api/funcs", api_funcs, NULL);
+		swill_handle("api/filemetrics", api_filemetrics, NULL);
+		swill_handle("api/projectfiles", api_projectfiles, NULL);
 	}
 
 
