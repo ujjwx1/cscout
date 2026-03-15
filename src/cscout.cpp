@@ -3813,6 +3813,91 @@ api_funmetrics(FILE *of, void *)
 	return 0;
 }
 
+// GET /api/refactor?id=EID&newname=NAME
+// Returns a preview of renaming an identifier — no files are modified
+static int
+api_refactor(FILE *of, void *)
+{
+	swill_setheader("content-type", "application/json");
+
+	Eclass *e;
+	if (!swill_getargs("p(id)", &e)) {
+		fprintf(of, "{\"error\":\"Missing or invalid id parameter\"}");
+		return 0;
+	}
+
+	char *newname = swill_getvar("newname");
+	if (!newname || !*newname) {
+		fprintf(of, "{\"error\":\"Missing newname parameter\"}");
+		return 0;
+	}
+
+	IdProp::iterator idi = ids.find(e);
+	if (idi == ids.end()) {
+		fprintf(of, "{\"error\":\"Identifier not found\"}");
+		return 0;
+	}
+
+	Identifier &id = idi->second;
+	string oldname = id.get_id();
+
+	// Collect all files containing this identifier
+	const setTokid &members = e->get_members();
+	set<Fileid> affected_files;
+	for (setTokid::const_iterator j = members.begin(); j != members.end(); j++)
+		affected_files.insert(j->get_fileid());
+
+	// Build the response: for each affected file, show the replacements
+	fprintf(of, "{\"eid\":\"%p\","
+		"\"old_name\":\"%s\","
+		"\"new_name\":\"%s\","
+		"\"affected_files\":%d,"
+		"\"total_replacements\":%d,"
+		"\"changes\":[",
+		(void *)e,
+		json_escape(oldname).c_str(),
+		json_escape(newname).c_str(),
+		(int)affected_files.size(),
+		(int)members.size());
+
+	bool first_file = true;
+	for (set<Fileid>::const_iterator fi = affected_files.begin(); fi != affected_files.end(); fi++) {
+		if (!first_file) fprintf(of, ",");
+		first_file = false;
+
+		fprintf(of, "{\"fid\":%d,"
+			"\"file\":\"%s\","
+			"\"replacements\":[",
+			fi->get_id(),
+			json_escape(fi->get_path()).c_str());
+
+		// Find all locations in this file
+		bool first_loc = true;
+		for (setTokid::const_iterator j = members.begin(); j != members.end(); j++) {
+			if (j->get_fileid() != *fi)
+				continue;
+			if (!first_loc) fprintf(of, ",");
+			first_loc = false;
+			int line = Filedetails::get_line_number(j->get_fileid(), j->get_streampos());
+			fprintf(of, "{\"line\":%d,"
+				"\"offset\":%lu,"
+				"\"length\":%d,"
+				"\"old\":\"%s\","
+				"\"new\":\"%s\"}",
+				line,
+				(unsigned long)j->get_streampos(),
+				e->get_len(),
+				json_escape(oldname).c_str(),
+				json_escape(newname).c_str());
+		}
+
+		fprintf(of, "]}");
+	}
+
+	fprintf(of, "]}");
+	return 0;
+}
+
 int
 main(int argc, char *argv[])
 {
@@ -4110,6 +4195,7 @@ main(int argc, char *argv[])
 		swill_handle("api/filemetrics", api_filemetrics, NULL);
 		swill_handle("api/projectfiles", api_projectfiles, NULL);
 		swill_handle("api/funmetrics", api_funmetrics, NULL);
+		swill_handle("api/refactor", api_refactor, NULL);
 	}
 
 
