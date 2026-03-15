@@ -3774,6 +3774,45 @@ api_projectfiles(FILE *of, void *)
 	return 0;
 }
 
+// GET /api/funmetrics?id=FID
+// Returns metrics for a single function as a JSON object
+static int
+api_funmetrics(FILE *of, void *)
+{
+	swill_setheader("content-type", "application/json");
+
+	Call *f;
+	if (!swill_getargs("p(id)", &f)) {
+		fprintf(of, "{\"error\":\"Missing or invalid id parameter\"}");
+		return 0;
+	}
+
+	fprintf(of, "{\"id\":\"%p\",\"name\":\"%s\",\"metrics\":{",
+		(void *)f, json_escape(f->get_name()).c_str());
+
+	bool first = true;
+	for (int j = 0; j < FunMetrics::metric_max; j++) {
+		if (Metrics::is_internal<FunMetrics>(j))
+			continue;
+		if (!first) fprintf(of, ",");
+		first = false;
+		if (Metrics::is_pre_cpp<FunMetrics>(j))
+			fprintf(of, "\"%s\":%g",
+				Metrics::get_dbfield<FunMetrics>(j).c_str(),
+				f->get_pre_cpp_metrics().get_metric(j));
+		else if (Metrics::is_post_cpp<FunMetrics>(j))
+			fprintf(of, "\"%s\":%g",
+				Metrics::get_dbfield<FunMetrics>(j).c_str(),
+				f->get_post_cpp_metrics().get_metric(j));
+		else
+			fprintf(of, "\"%s\":null",
+				Metrics::get_dbfield<FunMetrics>(j).c_str());
+	}
+
+	fprintf(of, "}}");
+	return 0;
+}
+
 int
 main(int argc, char *argv[])
 {
@@ -4070,6 +4109,7 @@ main(int argc, char *argv[])
 		swill_handle("api/funcs", api_funcs, NULL);
 		swill_handle("api/filemetrics", api_filemetrics, NULL);
 		swill_handle("api/projectfiles", api_projectfiles, NULL);
+		swill_handle("api/funmetrics", api_funmetrics, NULL);
 	}
 
 
