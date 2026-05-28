@@ -110,33 +110,17 @@ using namespace picoQL;
 	} while (0)
 
 
-// Workspace modification state
-static enum e_modification_state {
-	ms_unmodified,			// Unmodified; can be modified
-	ms_subst,			// An identifier has been substituted; only further substitutions are allowed
-	ms_hand_edit			// A file has been hand-edited; only further hand-edits are allowed
-} modification_state;
-
 static Fileid input_file_id;
 
 // This uses many of the above, and is therefore included here
 #include "gdisplay.h"
 
-// Set to true when the user has specified the application to exit
-static bool must_exit = false;
-
-
-// Set to true if we operate in browsing mode
-static bool browse_only = false;
-// Maximum number of nodes and edges allowed to browsing-only clients
-#define MAX_BROWSING_GRAPH_ELEMENTS 1000
 
 static CompiledRE sfile_re;			// Saved files replacement location RE
 
 
 static vector <Fileid> files;
 
-Attributes::size_type current_project;
 
 
 /*
@@ -178,7 +162,7 @@ static int num_id_replacements = 0;
 static int num_fun_call_refactorings = 0;
 
 
-static int index_page(FILE *of, void *data);
+int index_page(FILE *of, void *data);
 
 // Return the page suffix for the select call graph type
 static const char *
@@ -213,7 +197,7 @@ progress(typename container::const_iterator i, const container &c)
 }
 
 // Display an identifier hyperlink
-static void
+void
 html(FILE *of, const IdPropElem &i)
 {
 	fprintf(of, "<a href=\"id.html?id=%p\">", (void *)i.first);
@@ -221,7 +205,7 @@ html(FILE *of, const IdPropElem &i)
 	fputs("</a>", of);
 }
 
-static void
+void
 html(FILE *of, const Call &c)
 {
 	fprintf(of, "<a href=\"fun.html?f=%p\">", (void *)&c);
@@ -230,7 +214,7 @@ html(FILE *of, const Call &c)
 }
 
 // Display a hyperlink based on a string and its starting tokid
-static void
+void
 html_string(FILE *of, const string &s, Tokid t)
 {
 	int len = s.length();
@@ -247,7 +231,7 @@ html_string(FILE *of, const string &s, Tokid t)
 }
 
 // Display hyperlinks to a function's identifiers
-static void
+void
 html_string(FILE *of, const Call *f)
 {
 	int start = 0;
@@ -404,7 +388,7 @@ file_analyze(Fileid fi)
 }
 
 // Display the contents of a file in hypertext form
-static void
+void
 file_hypertext(FILE *of, Fileid fi, bool eval_query)
 {
 	istream *in;
@@ -921,7 +905,7 @@ file_refactor(FILE *of, Fileid fid)
 	return;
 }
 
-static void
+void
 change_prohibited(FILE *fo)
 {
 	html_head(fo, "nochange", "Change Prohibited");
@@ -931,7 +915,7 @@ change_prohibited(FILE *fo)
 	html_tail(fo);
 }
 
-static void
+void
 nonbrowse_operation_prohibited(FILE *fo)
 {
 	html_head(fo, "nochange", "Non-browsing Operations Disabled");
@@ -941,7 +925,7 @@ nonbrowse_operation_prohibited(FILE *fo)
 }
 
 // Call before the start of a file list
-static void
+void
 html_file_begin(FILE *of)
 {
 	if (Option::fname_in_context->get())
@@ -951,28 +935,28 @@ html_file_begin(FILE *of)
 }
 
 // Call before actually listing files (after printing additional headers)
-static void
+void
 html_file_set_begin(FILE *of)
 {
 	fprintf(of, "</tr>\n");
 }
 
 // Called after html_file (after printing additional columns)
-static void
+void
 html_file_record_end(FILE *of)
 {
 	fprintf(of, "</tr>\n");
 }
 
 // Called at the end
-static void
+void
 html_file_end(FILE *of)
 {
 	fprintf(of, "</table>\n");
 }
 
 // Display a filename of an html file
-static void
+void
 html_file(FILE *of, Fileid fi)
 {
 	if (!Option::fname_in_context->get()) {
@@ -999,7 +983,7 @@ html_file(FILE *of, Fileid fi)
 }
 
 // File query page
-static int
+int
 filequery_page(FILE *of,  void *)
 {
 	html_head(of, "filequery", "File Query");
@@ -1026,7 +1010,7 @@ filequery_page(FILE *of,  void *)
 }
 
 // Process a file query
-static int
+int
 xfilequery_page(FILE *of,  void *)
 {
 	Timer timer;
@@ -1078,7 +1062,7 @@ xfilequery_page(FILE *of,  void *)
  * for properly aligning the output.
  */
 template <typename container>
-static void
+void
 display_sorted(FILE *of, const Query &query, const container &sorted_ids)
 {
 	if (Option::sort_rev->get())
@@ -1107,7 +1091,7 @@ display_sorted(FILE *of, const Query &query, const container &sorted_ids)
  * taking into account the reverse sort property
  * for properly aligning the output.
  */
-static void
+void
 display_sorted_function_metrics(FILE *of, const FunQuery &query, const Sfuns &sorted_ids)
 {
 	fprintf(of, "<table class=\"metrics\"><tr>"
@@ -1130,7 +1114,7 @@ display_sorted_function_metrics(FILE *of, const FunQuery &query, const Sfuns &so
 
 
 // Identifier query page
-static int
+int
 iquery_page(FILE *of,  void *)
 {
 	html_head(of, "iquery", "Identifier Query");
@@ -1179,7 +1163,7 @@ iquery_page(FILE *of,  void *)
 }
 
 // Function query page
-static int
+int
 funquery_page(FILE *of,  void *)
 {
 	html_head(of, "funquery", "Function Query");
@@ -1284,7 +1268,7 @@ display_files(FILE *of, const Query &query, const IFSet &sorted_files)
 }
 
 // Process an identifier query
-static int
+int
 xiquery_page(FILE *of,  void *)
 {
 	Timer timer;
@@ -1344,7 +1328,7 @@ xiquery_page(FILE *of,  void *)
 }
 
 // Process a function query
-static int
+int
 xfunquery_page(FILE *of,  void *)
 {
 	prohibit_remote_access(of);
@@ -1389,7 +1373,7 @@ xfunquery_page(FILE *of,  void *)
 }
 
 // Display an identifier property
-static void
+void
 show_id_prop(FILE *fo, const string &name, bool val)
 {
 	if (!Option::show_true->get() || val)
@@ -1397,7 +1381,7 @@ show_id_prop(FILE *fo, const string &name, bool val)
 }
 
 // Display whether a macro can be replaced by a C constant
-static void
+void
 show_c_const(FILE *fo, Eclass *e)
 {
 	bool val = !e->get_attribute(is_fun_macro)
@@ -1416,7 +1400,7 @@ show_c_const(FILE *fo, Eclass *e)
 }
 
 // Details for each identifier
-static int
+int
 identifier_page(FILE *fo, void *)
 {
 	Eclass *e;
@@ -1498,7 +1482,7 @@ identifier_page(FILE *fo, void *)
 }
 
 // Details for each function
-static int
+int
 function_page(FILE *fo, void *)
 {
 	Call *f;
@@ -1655,7 +1639,7 @@ function_page(FILE *fo, void *)
  * If show is true, then a function hyperlink is printed, otherwise
  * only the visited flag is set to visit_id.
  */
-static void
+void
 visit_functions(FILE *fo, const char *call_path, Call *f,
 	Call::const_fiterator_type (Call::*fbegin)() const,
 	Call::const_fiterator_type (Call::*fend)() const,
@@ -1687,7 +1671,7 @@ visit_functions(FILE *fo, const char *call_path, Call *f,
  * the is_ok method pointer.
  * Set the visited flag for all nodes visited.
  */
-static void
+void
 visit_include_files(Fileid f, const FileIncMap & (*get_map)(Fileid fi),
     bool (IncDetails::*is_ok)() const, int level)
 {
@@ -1710,7 +1694,7 @@ visit_include_files(Fileid f, const FileIncMap & (*get_map)(Fileid fi),
  * the get_fileid_set method pointer.
  * Set the visited flag for all nodes visited.
  */
-static void
+void
 visit_globobj_files(Fileid f, const Fileidset & (*get_fileid_set)(Fileid fi),
 		int level)
 {
@@ -1735,7 +1719,7 @@ visit_globobj_files(Fileid f, const Fileidset & (*get_fileid_set)(Fileid fi),
  * Set the visited flag for all nodes visited and the edges matrix for
  * the corresponding edges.
  */
-static void
+void
 visit_fcall_files(Fileid f, Call::const_fiterator_type (Call::*abegin)() const, Call::const_fiterator_type (Call::*aend)() const, int level, EdgeMatrix &edges)
 {
 	if (level == 0)
@@ -1769,7 +1753,7 @@ extern "C" { const char *swill_getquerystring(void); }
  * Print a list of callers or called functions for the given function,
  * recursively expanding functions that the user has specified.
  */
-static void
+void
 explore_functions(FILE *fo, Call *f,
 	Call::const_fiterator_type (Call::*fbegin)() const,
 	Call::const_fiterator_type (Call::*fend)() const,
@@ -1813,7 +1797,7 @@ explore_functions(FILE *fo, Call *f,
 }
 
 // List of functions associated with a given one
-static int
+int
 funlist_page(FILE *fo, void *)
 {
 	Call *f;
@@ -1916,7 +1900,7 @@ call_path(GraphDisplay *gd, Call *from, Call *to, bool generate_nodes)
 }
 
 // List the call graph from one function to another
-static int
+int
 cpath_page(GraphDisplay *gd)
 {
 	Call *from, *to;
@@ -1945,7 +1929,7 @@ cpath_page(GraphDisplay *gd)
 
 
 // Front-end global options page
-static int
+int
 options_page(FILE *fo, void *)
 {
 	html_head(fo, "options", "Global Options");
@@ -1960,7 +1944,7 @@ options_page(FILE *fo, void *)
 }
 
 // Front-end global options page
-static int
+int
 set_options_page(FILE *fo, void *p)
 {
 	prohibit_remote_access(fo);
@@ -1986,7 +1970,7 @@ set_options_page(FILE *fo, void *p)
 }
 
 // Save options in .cscout/options
-static int
+int
 save_options_page(FILE *fo, void *)
 {
 	prohibit_browsers(fo);
@@ -2030,7 +2014,7 @@ options_load()
 	fprintf(stderr, "Options loaded from %s\n", fname.c_str());
 }
 
-static int
+int
 file_metrics_page(FILE *fo, void *)
 {
 	html_head(fo, "filemetrics", "File Metrics");
@@ -2041,7 +2025,7 @@ file_metrics_page(FILE *fo, void *)
 	return 0;
 }
 
-static int
+int
 function_metrics_page(FILE *fo, void *)
 {
 	html_head(fo, "funmetrics", "Function Metrics");
@@ -2052,7 +2036,7 @@ function_metrics_page(FILE *fo, void *)
 	return 0;
 }
 
-static int
+int
 id_metrics_page(FILE *fo, void *)
 {
 	html_head(fo, "idmetrics", "Identifier Metrics");
@@ -2177,7 +2161,7 @@ single_file_function_graph()
 }
 
 // Call graph
-static int
+int
 cgraph_page(GraphDisplay *gd)
 {
 	bool all, only_visited;
@@ -2227,7 +2211,7 @@ end:
 }
 
 // File dependency graph
-static int
+int
 fgraph_page(GraphDisplay *gd)
 {
 
@@ -2378,7 +2362,7 @@ end:
 }
 
 // Graph: text
-static int
+int
 graph_txt_page(FILE *fo, void (*graph_fun)(GraphDisplay *))
 {
 	// Add output and outfile argument to enable output to outfile
@@ -2403,7 +2387,7 @@ graph_txt_page(FILE *fo, void (*graph_fun)(GraphDisplay *))
 }
 
 // Graph: HTML
-static int
+int
 graph_html_page(FILE *fo, void (*graph_fun)(GraphDisplay *))
 {
 	GDHtml gd(fo);
@@ -2412,7 +2396,7 @@ graph_html_page(FILE *fo, void (*graph_fun)(GraphDisplay *))
 }
 
 // Graph: dot
-static int
+int
 graph_dot_page(FILE *fo, void (*graph_fun)(GraphDisplay *))
 {
 	GDDot gd(fo);
@@ -2421,7 +2405,7 @@ graph_dot_page(FILE *fo, void (*graph_fun)(GraphDisplay *))
 }
 
 // Graph: SVG via dot
-static int
+int
 graph_svg_page(FILE *fo, void (*graph_fun)(GraphDisplay *))
 {
 	prohibit_remote_access(fo);
@@ -2431,7 +2415,7 @@ graph_svg_page(FILE *fo, void (*graph_fun)(GraphDisplay *))
 }
 
 // Graph: GIF via dot
-static int
+int
 graph_gif_page(FILE *fo, void (*graph_fun)(GraphDisplay *))
 {
 	prohibit_remote_access(fo);
@@ -2442,7 +2426,7 @@ graph_gif_page(FILE *fo, void (*graph_fun)(GraphDisplay *))
 
 
 // Graph: PNG via dot
-static int
+int
 graph_png_page(FILE *fo, void (*graph_fun)(GraphDisplay *))
 {
 	prohibit_remote_access(fo);
@@ -2453,7 +2437,7 @@ graph_png_page(FILE *fo, void (*graph_fun)(GraphDisplay *))
 
 
 // Graph: PDF via dot
-static int
+int
 graph_pdf_page(FILE *fo, void (*graph_fun)(GraphDisplay *))
 {
 	prohibit_remote_access(fo);
@@ -2556,7 +2540,7 @@ produce_call_graphs(const vector <string> &call_graphs)
 
 
 // Setup graph handling for all supported graph output types
-static void
+void
 graph_handle(string name, int (*graph_fun)(GraphDisplay *))
 {
 	swill_handle((name + ".html").c_str(), graph_html_page, graph_fun);
@@ -2569,7 +2553,7 @@ graph_handle(string name, int (*graph_fun)(GraphDisplay *))
 }
 
 // Display all projects, allowing user to select
-static int
+int
 select_project_page(FILE *fo, void *)
 {
 	html_head(fo, "sproject", "Select Active Project");
@@ -2583,7 +2567,7 @@ select_project_page(FILE *fo, void *)
 }
 
 // Select a single project (or none) to restrict file/identifier results
-static int
+int
 set_project_page(FILE *fo, void *p)
 {
 	prohibit_browsers(fo);
@@ -2639,7 +2623,7 @@ version_info(bool html)
 }
 
 // Display information about CScout
-static int
+int
 about_page(FILE *fo, void *)
 {
 	html_head(fo, "about", "About CScout");
@@ -2650,7 +2634,7 @@ about_page(FILE *fo, void *)
 
 
 // Index
-static int
+int
 index_page(FILE *of, void *)
 {
 	html_head(of, "index", "CScout Main Page", "<img src=\"logo.png\">Scout Main Page");
@@ -2748,7 +2732,7 @@ index_page(FILE *of, void *)
 	return 0;
 }
 
-static int
+int
 file_page(FILE *of, void *)
 {
 	int id;
@@ -2866,7 +2850,7 @@ file_page(FILE *of, void *)
 	return 0;
 }
 
-static int
+int
 source_page(FILE *of, void *)
 {
 	int id;
@@ -2882,7 +2866,7 @@ source_page(FILE *of, void *)
 	return 0;
 }
 
-static int
+int
 fedit_page(FILE *of, void *)
 {
 	if (modification_state == ms_subst) {
@@ -2914,7 +2898,7 @@ fedit_page(FILE *of, void *)
 	return 0;
 }
 
-static int
+int
 query_source_page(FILE *of, void *)
 {
 	int id;
@@ -2935,7 +2919,7 @@ query_source_page(FILE *of, void *)
 	return 0;
 }
 
-static int
+int
 query_include_page(FILE *of, void *)
 {
 	int id;
@@ -2984,14 +2968,14 @@ query_include_page(FILE *of, void *)
 	return 0;
 }
 
-static int
+int
 logo_page(FILE *fo, void *)
 {
 	Logo::logo(fo);
 	return 0;
 }
 
-static int
+int
 replacements_page(FILE *of, void *)
 {
 	prohibit_remote_access(of);
@@ -3023,7 +3007,7 @@ replacements_page(FILE *of, void *)
 }
 
 // Process an identifier replacements form
-static int
+int
 xreplacements_page(FILE *of,  void *p)
 {
 	prohibit_browsers(of);
@@ -3054,7 +3038,7 @@ xreplacements_page(FILE *of,  void *p)
 }
 
 
-static int
+int
 funargrefs_page(FILE *of, void *)
 {
 	prohibit_remote_access(of);
@@ -3078,7 +3062,7 @@ funargrefs_page(FILE *of, void *)
 }
 
 // Process a function argument refactorings form
-static int
+int
 xfunargrefs_page(FILE *of,  void *p)
 {
 	prohibit_browsers(of);
@@ -3101,7 +3085,7 @@ xfunargrefs_page(FILE *of,  void *p)
 }
 
 
-static int
+int
 write_quit_page(FILE *of, void *exit)
 {
 	prohibit_browsers(of);
@@ -3187,7 +3171,7 @@ write_quit_page(FILE *of, void *exit)
 	return 0;
 }
 
-static int
+int
 quit_page(FILE *of, void *)
 {
 	prohibit_browsers(of);

@@ -1,5 +1,5 @@
 /*
- * (C) Copyright 2008-2015 Diomidis Spinellis
+ * (C) Copyright 2008-2026 Diomidis Spinellis
  *
  * This file is part of CScout.
  *
@@ -17,7 +17,7 @@
  * along with CScout.  If not, see <http://www.gnu.org/licenses/>.
  *
  *
- * HTML helper functions.
+ * HTML utility functions and handler declarations.
  *
  */
 
@@ -30,10 +30,30 @@
 using namespace std;
 
 #include "fileid.h"
+#include "attr.h"
+#include "compiledre.h"
+#include "tokid.h"
+#include "call.h"
+class GraphDisplay;
 
-class Call;
+/* Workspace modification state - tracks whether substitution or
+ * hand-edit mode is active, controlling what the web UI permits. */
+enum e_modification_state {
+	ms_unmodified,		/* Unmodified; can be modified */
+	ms_subst,		/* An identifier has been substituted */
+	ms_hand_edit		/* A file has been hand-edited */
+};
 
-const char * html(char c);
+extern enum e_modification_state modification_state;
+extern bool browse_only;
+extern bool must_exit;
+extern Attributes::size_type current_project;
+
+/* Maximum graph elements allowed to browsing-only clients */
+#define MAX_BROWSING_GRAPH_ELEMENTS 1000
+
+/* HTML utility functions */
+const char *html(char c);
 string html(const string &s);
 void html_string(FILE *of, string s);
 void html_head(FILE *of, const string fname, const string title, const char *heading = NULL);
@@ -44,4 +64,47 @@ void html_error(FILE *of, const string &user_msg);
 string function_label(Call *f, bool hyperlink);
 string file_label(Fileid f, bool hyperlink);
 
-#endif // HTML_
+/* HTML handler functions - registered with swill_handle() in cscout.cpp */
+int index_page(FILE *of, void *data);
+int filequery_page(FILE *of, void *);
+int xfilequery_page(FILE *of, void *);
+int iquery_page(FILE *of, void *);
+int funquery_page(FILE *of, void *);
+int xiquery_page(FILE *of, void *);
+int xfunquery_page(FILE *of, void *);
+int identifier_page(FILE *fo, void *);
+int function_page(FILE *fo, void *);
+int funlist_page(FILE *fo, void *);
+int cpath_page(GraphDisplay *gd);
+int options_page(FILE *fo, void *);
+int set_options_page(FILE *fo, void *p);
+int save_options_page(FILE *fo, void *);
+int file_metrics_page(FILE *fo, void *);
+int function_metrics_page(FILE *fo, void *);
+int id_metrics_page(FILE *fo, void *);
+int cgraph_page(GraphDisplay *gd);
+int fgraph_page(GraphDisplay *gd);
+int graph_txt_page(FILE *fo, void (*graph_fun)(GraphDisplay *));
+int graph_html_page(FILE *fo, void (*graph_fun)(GraphDisplay *));
+int graph_dot_page(FILE *fo, void (*graph_fun)(GraphDisplay *));
+int graph_svg_page(FILE *fo, void (*graph_fun)(GraphDisplay *));
+int graph_gif_page(FILE *fo, void (*graph_fun)(GraphDisplay *));
+int graph_png_page(FILE *fo, void (*graph_fun)(GraphDisplay *));
+int graph_pdf_page(FILE *fo, void (*graph_fun)(GraphDisplay *));
+int select_project_page(FILE *fo, void *);
+int set_project_page(FILE *fo, void *p);
+int about_page(FILE *fo, void *);
+int file_page(FILE *of, void *);
+int source_page(FILE *of, void *);
+int fedit_page(FILE *of, void *);
+int query_source_page(FILE *of, void *);
+int query_include_page(FILE *of, void *);
+int logo_page(FILE *fo, void *);
+int replacements_page(FILE *of, void *);
+int xreplacements_page(FILE *of, void *p);
+int funargrefs_page(FILE *of, void *);
+int xfunargrefs_page(FILE *of, void *p);
+int write_quit_page(FILE *of, void *exit);
+int quit_page(FILE *of, void *);
+
+#endif /* HTML_ */

@@ -67,6 +67,14 @@
 #include "html.h"
 #include "fileutils.h"
 #include "option.h"
+#include "attr.h"
+
+/* HTML interface state variables.
+ * Declared extern in html.h so cscout.cpp can access them too. */
+enum e_modification_state modification_state = ms_unmodified;
+bool browse_only = false;
+bool must_exit = false;
+Attributes::size_type current_project = 0;
 
 /*
  * Return as a C string the HTML equivalent of character c
