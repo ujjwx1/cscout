@@ -87,6 +87,7 @@
 #include "dbtoken.h"
 #include "macro_arg_processor.h"
 #include "rest.h"
+#include "options.h"
 
 #ifdef PICO_QL
 #include "pico_ql_search.h"
@@ -109,19 +110,6 @@ using namespace picoQL;
 	} while (0)
 
 
-// Global command-line options
-static enum e_process {
-	pm_unspecified,			// Default (web front-end) must be 0
-	pm_preprocess,			// Preprocess-only (-E)
-	pm_compile,			// Compile-only (-c)
-	pm_report,			// Generate a warning report
-	pm_database,
-	pm_obfuscation,
-	pm_call_graph
-} process_mode;
-static int portno = 8081;		// Port number (-p n)
-static string db_engine;		// Create SQL output for a specific db_iface
-
 // Workspace modification state
 static enum e_modification_state {
 	ms_unmodified,			// Unmodified; can be modified
@@ -143,12 +131,8 @@ static bool browse_only = false;
 // Maximum number of nodes and edges allowed to browsing-only clients
 #define MAX_BROWSING_GRAPH_ELEMENTS 1000
 
-static bool quiet = false;           //added a global variable for quiet 
-
 static CompiledRE sfile_re;			// Saved files replacement location RE
 
-// Identifiers to monitor (-m parameter)
-static IdQuery monitor;
 
 static vector <Fileid> files;
 
@@ -296,7 +280,7 @@ file_analyze(Fileid fi)
 	Call *cfun = NULL;			// Current function
 	stack <Call *> fun_nesting;
 
-	if (!quiet)
+	if (!CscoutOptions::quiet)
 	    cerr << "Post-processing " << fname << endl;
 	in.open(fname.c_str(), ios::binary);
 	if (in.fail()) {
@@ -348,10 +332,10 @@ file_analyze(Fileid fi)
 		    (isalnum(c) || c == '_') &&
 		    (ei = ti.find_ec()) != ti.end_ec()) {
 			Eclass *ec = (*ei).second;
-			// Remove identifiers we are not supposed to monitor
-			if (monitor.is_valid()) {
+			// Remove identifiers we are not supposed to CscoutOptions::monitor
+			if (CscoutOptions::monitor.is_valid()) {
 				IdPropElem ec_id(ec, Identifier());
-				if (!monitor.eval(ec_id)) {
+				if (!CscoutOptions::monitor.eval(ec_id)) {
 					ec->remove_from_tokid_map();
 					delete ec;
 					continue;
@@ -860,7 +844,7 @@ file_refactor(FILE *of, Fileid fid)
 	fifstream in;
 	ofstream out;
 
-	if (!quiet)
+	if (!CscoutOptions::quiet)
 	    cerr << "Processing file " << fid.get_path() << endl;
 
 	if (RefFunCall::store.size())
@@ -1321,7 +1305,7 @@ xiquery_page(FILE *of,  void *)
 	}
 
 	html_head(of, "xiquery", (qname && *qname) ? qname : "Identifier Query Results");
-	if (!quiet)
+	if (!CscoutOptions::quiet)
 	    cerr << "Evaluating identifier query" << endl;
 	for (IdProp::iterator i = ids.begin(); i != ids.end(); i++) {
 		progress(i, ids);
@@ -1337,7 +1321,7 @@ xiquery_page(FILE *of,  void *)
 			funs.insert(ecfuns.begin(), ecfuns.end());
 		}
 	}
-	if (!quiet)
+	if (!CscoutOptions::quiet)
 	    cerr << endl;
 	if (q_id) {
 		fputs("<h2>Matching Identifiers</h2>\n", of);
@@ -1377,7 +1361,7 @@ xfunquery_page(FILE *of,  void *)
 		return 0;
 
 	html_head(of, "xfunquery", (qname && *qname) ? qname : "Function Query Results");
-	if (!quiet)
+	if (!CscoutOptions::quiet)
 	    cerr << "Evaluating function query" << endl;
 	for (Call::const_fmap_iterator_type i = Call::fbegin(); i != Call::fend(); i++) {
 		progress(i, Call::functions());
@@ -1388,7 +1372,7 @@ xfunquery_page(FILE *of,  void *)
 		if (q_file)
 			sorted_files.insert(i->second->get_fileid());
 	}
-	if (!quiet)
+	if (!CscoutOptions::quiet)
 	    cerr << endl;
 	if (q_id) {
 		fputs("<h2>Matching Functions</h2>\n", of);
@@ -2411,7 +2395,7 @@ graph_txt_page(FILE *fo, void (*graph_fun)(GraphDisplay *))
 		fclose(ofile);
 	}
 
-	if (process_mode != pm_call_graph) {
+	if (CscoutOptions::process_mode != pm_call_graph) {
 		GDTxt gd(fo);
 		graph_fun(&gd);
 	}
@@ -3013,7 +2997,7 @@ replacements_page(FILE *of, void *)
 	prohibit_remote_access(of);
 	html_head(of, "replacements", "Identifier Replacements");
 	
-	if (!quiet)
+	if (!CscoutOptions::quiet)
 	    cerr << "Creating identifier list" << endl;
 	fputs("<p><form action=\"xreplacements.html\" method=\"get\">\n"
 		"<table><tr><th>Identifier</th><th>Replacement</th><th>Active</th></tr>\n"
@@ -3031,7 +3015,7 @@ replacements_page(FILE *of, void *)
 				(void *)&(i->second), i->second.get_active() ? "checked" : "");
 		}
 	}
-	if (!quiet)
+	if (!CscoutOptions::quiet)
 	    cerr << endl;
 	fputs("</table><p><INPUT TYPE=\"submit\" name=\"repl\" value=\"OK\">\n", of);
 	html_tail(of);
@@ -3045,7 +3029,7 @@ xreplacements_page(FILE *of,  void *p)
 	prohibit_browsers(of);
 	prohibit_remote_access(of);
 
-	if (!quiet)
+	if (!CscoutOptions::quiet)
 	    cerr << "Creating identifier list" << endl;
 
 	for (IdProp::iterator i = ids.begin(); i != ids.end(); i++) {
@@ -3063,7 +3047,7 @@ xreplacements_page(FILE *of,  void *p)
 			i->second.set_active(!!swill_getvar(varname));
 		}
 	}
-	if (!quiet)
+	if (!CscoutOptions::quiet)
 	    cerr << endl;
 	index_page(of, p);
 	return 0;
@@ -3140,7 +3124,7 @@ write_quit_page(FILE *of, void *exit)
 
 	// Determine files we need to process
 	IFSet process;
-	if (!quiet)
+	if (!CscoutOptions::quiet)
 	    cerr << "Examining identifiers for renaming" << endl;
 	for (IdProp::iterator i = ids.begin(); i != ids.end(); i++) {
 		progress(i, ids);
@@ -3150,13 +3134,13 @@ write_quit_page(FILE *of, void *exit)
 			process.insert(ifiles.begin(), ifiles.end());
 		}
 	}
-	if (!quiet)
+	if (!CscoutOptions::quiet)
 	    cerr << endl;
 
 	// Check for identifier clashes
 	Token::found_clashes = false;
 	if (Option::refactor_check_clashes->get() && process.size()) {
-		if (!quiet)
+		if (!CscoutOptions::quiet)
 		    cerr << "Checking rename refactorings for name clashes." << endl;
 		Token::check_clashes = true;
 		// Reparse everything
@@ -3175,7 +3159,7 @@ write_quit_page(FILE *of, void *exit)
 		return 0;
 	}
 
-	if (!quiet) 
+	if (!CscoutOptions::quiet) 
 	    cerr << "Examining function calls for refactoring" << endl;
 	for (RefFunCall::store_type::iterator i = RefFunCall::store.begin(); i != RefFunCall::store.end(); i++) {
 		progress(i, RefFunCall::store);
@@ -3185,11 +3169,11 @@ write_quit_page(FILE *of, void *exit)
 		IFSet ifiles = e->sorted_files();
 		process.insert(ifiles.begin(), ifiles.end());
 	}
-	if (!quiet)
+	if (!CscoutOptions::quiet)
 	    cerr << endl;
 
 	// Now do the replacements
-	if (!quiet)
+	if (!CscoutOptions::quiet)
 	    cerr << "Processing files" << endl;
 	for (IFSet::const_iterator i = process.begin(); i != process.end(); i++)
 		file_refactor(of, *i);
@@ -3386,7 +3370,7 @@ usage(char *fname)
 		"\t\t(Will process file(s) matched by the regular expression)\n"
 		"\t-l file\tSpecify access log file\n"
 		"\t-M files\tMerge specified EC files\n"
-		"\t-m spec\tSpecify identifiers to monitor (unsound)\n"
+		"\t-m spec\tSpecify identifiers to CscoutOptions::monitor (unsound)\n"
 		"\t-o\tCreate obfuscated versions of the processed files\n"
 		"\t-P RE\tProcess only file(s) matched by the regular expression\n"
 		"\t-p port\tSpecify TCP port for serving the CScout web pages\n"
@@ -3491,17 +3475,17 @@ main(int argc, char *argv[])
 	vector<string> call_graphs;
 	Debug::db_read();
 
-	while ((c = getopt(argc, argv, "3bCcd:rvE:P:p:Mm:l:oR:S:s:t:q" PICO_QL_OPTIONS)) != EOF)  //added q for quiet
+	while ((c = getopt(argc, argv, "3bCcd:rvE:P:p:Mm:l:oR:S:s:t:q" PICO_QL_OPTIONS)) != EOF)  //added q for CscoutOptions::quiet
 		switch (c) {
 		case '3':
 			Fchar::enable_trigraphs();
 			break;
 		case 'E':
-			if (!optarg || process_mode)
+			if (!optarg || CscoutOptions::process_mode)
 				usage(argv[0]);
 			// Preprocess the specified file
 			Pdtoken::set_preprocessed_output(verified_compiled_re(optarg));
-			process_mode = pm_preprocess;
+			CscoutOptions::process_mode = pm_preprocess;
 			break;
 		case 'C':
 			CTag::enable();
@@ -3512,9 +3496,9 @@ main(int argc, char *argv[])
 			/* FALLTHROUGH */
 		#endif
 		case 'c':
-			if (process_mode)
+			if (CscoutOptions::process_mode)
 				usage(argv[0]);
-			process_mode = pm_compile;
+			CscoutOptions::process_mode = pm_compile;
 			break;
 		case 'd':
 			if (!optarg)
@@ -3533,8 +3517,8 @@ main(int argc, char *argv[])
 		case 'p':
 			if (!optarg)
 				usage(argv[0]);
-			portno = atoi(optarg);
-			if (portno < 1024 || portno > 32767)
+			CscoutOptions::portno = atoi(optarg);
+			if (CscoutOptions::portno < 1024 || CscoutOptions::portno > 32767)
 				usage(argv[0]);
 			break;
 		case 'M':
@@ -3543,12 +3527,12 @@ main(int argc, char *argv[])
 		case 'm':
 			if (!optarg)
 				usage(argv[0]);
-			monitor = IdQuery(optarg);
+			CscoutOptions::monitor = IdQuery(optarg);
 			break;
 		case 'r':
-			if (process_mode)
+			if (CscoutOptions::process_mode)
 				usage(argv[0]);
-			process_mode = pm_report;
+			CscoutOptions::process_mode = pm_report;
 			break;
 		case 'v':
 			cout << version_info(false);
@@ -3557,7 +3541,7 @@ main(int argc, char *argv[])
 			browse_only = true;
 			break;
 		case 'q':
-			quiet = true;
+			CscoutOptions::quiet = true;
 			break;
 		case 'l':
 			if (!optarg)
@@ -3570,9 +3554,9 @@ main(int argc, char *argv[])
 			swill_log(logfile);
 			break;
 		case 'o':
-			if (process_mode)
+			if (CscoutOptions::process_mode)
 				usage(argv[0]);
-			process_mode = pm_obfuscation;
+			CscoutOptions::process_mode = pm_obfuscation;
 			break;
 		case 'P':
 			if (!optarg)
@@ -3581,22 +3565,22 @@ main(int argc, char *argv[])
 			Pdtoken::set_processed_files(verified_compiled_re(optarg));
 			break;
 		case 'S':
-			if (process_mode)
+			if (CscoutOptions::process_mode)
 				usage(argv[0]);
 			if (!optarg)
 				usage(argv[0]);
-			db_engine = optarg;
+			CscoutOptions::db_engine = optarg;
 			if (!Sql::setEngine(optarg))
 				return 1;
 			workdb_schema(Sql::getInterface(), cout);
 			exit(0);
 		case 's':
-			if (process_mode)
+			if (CscoutOptions::process_mode)
 				usage(argv[0]);
 			if (!optarg)
 				usage(argv[0]);
-			process_mode = pm_database;
-			db_engine = optarg;
+			CscoutOptions::process_mode = pm_database;
+			CscoutOptions::db_engine = optarg;
 			break;
 		case 't':
 			if (!optarg)
@@ -3606,7 +3590,7 @@ main(int argc, char *argv[])
 		case 'R':
 			if (!optarg)
 				usage(argv[0]);
-			process_mode = pm_call_graph;
+			CscoutOptions::process_mode = pm_call_graph;
 			call_graphs.push_back(string(optarg));
 			break;
 		case '?':
@@ -3618,12 +3602,12 @@ main(int argc, char *argv[])
 	if (argv[optind] == NULL || argv[optind + 1] != NULL)
 		usage(argv[0]);
 
-	if (process_mode != pm_compile
-	    && process_mode != pm_database
-	    && process_mode != pm_obfuscation
-	    && process_mode != pm_preprocess) {
-		if (!swill_init(portno)) {
-			cerr << "Couldn't initialize our web server on port " << portno << endl;
+	if (CscoutOptions::process_mode != pm_compile
+	    && CscoutOptions::process_mode != pm_database
+	    && CscoutOptions::process_mode != pm_obfuscation
+	    && CscoutOptions::process_mode != pm_preprocess) {
+		if (!swill_init(CscoutOptions::portno)) {
+			cerr << "Couldn't initialize our web server on port " << CscoutOptions::portno << endl;
 			exit(1);
 		}
 
@@ -3632,8 +3616,8 @@ main(int argc, char *argv[])
 		parse_acl();
 	}
 
-	if (process_mode == pm_database) {
-		if (!Sql::setEngine(db_engine))
+	if (CscoutOptions::process_mode == pm_database) {
+		if (!Sql::setEngine(CscoutOptions::db_engine))
 			return 1;
 		cout << Sql::getInterface()->begin_commands();
 		workdb_schema(Sql::getInterface(), cout);
@@ -3653,14 +3637,14 @@ main(int argc, char *argv[])
 	while (t.get_code() != EOF);
 	Error::set_parsing(false);
 
-	if (process_mode == pm_preprocess)
+	if (CscoutOptions::process_mode == pm_preprocess)
 		return 0;
 
 	input_file_id = Fileid(argv[optind]);
 
 	Filedetails::unify_identical_files();
 
-	if (process_mode == pm_obfuscation)
+	if (CscoutOptions::process_mode == pm_obfuscation)
 		return obfuscate();
 
 	// Pass 2: Create web pages
@@ -3668,7 +3652,7 @@ main(int argc, char *argv[])
 
 
 
-	if (process_mode != pm_compile) {
+	if (CscoutOptions::process_mode != pm_compile) {
 		swill_handle("sproject.html", select_project_page, 0);
 		swill_handle("replacements.html", replacements_page, 0);
 		swill_handle("xreplacements.html", xreplacements_page, NULL);
@@ -3700,7 +3684,7 @@ main(int argc, char *argv[])
 	GlobObj::set_file_dependencies();
 
 	// Set xfile and  metrics for each identifier
-	if (!quiet)
+	if (!CscoutOptions::quiet)
 	    cerr << "Processing identifiers" << endl;
 	for (IdProp::iterator i = ids.begin(); i != ids.end(); i++) {
 		progress(i, ids);
@@ -3710,13 +3694,13 @@ main(int argc, char *argv[])
 		// Update metrics
 		id_msum.add_unique_id(e);
 	}
-	if (!quiet)
+	if (!CscoutOptions::quiet)
 	    cerr << endl;
 
 	if (DP())
 		cout << "Size " << file_msum.get_pre_cpp_total(Metrics::em_nchar) << endl;
 
-	if (process_mode == pm_database) {
+	if (CscoutOptions::process_mode == pm_database) {
 		workdb_rest(Sql::getInterface(), cout);
 		Call::dumpSql(Sql::getInterface(), cout);
 		cout << Sql::getInterface()->end_commands();
@@ -3731,7 +3715,7 @@ main(int argc, char *argv[])
 		return 0;
 	}
 
-	if (process_mode != pm_compile) {
+	if (CscoutOptions::process_mode != pm_compile) {
 		swill_handle("src.html", source_page, NULL);
 		swill_handle("qsrc.html", query_source_page, NULL);
 		swill_handle("fedit.html", fedit_page, NULL);
@@ -3790,7 +3774,7 @@ main(int argc, char *argv[])
 	}
 
 	CTag::save();
-	if (process_mode == pm_report) {
+	if (CscoutOptions::process_mode == pm_report) {
 		if (!must_exit)
 			warning_report();
 		return (0);
@@ -3802,13 +3786,13 @@ main(int argc, char *argv[])
 		pico_ql_register(&Identifier::ids, "ids");
 		pico_ql_register(&Tokid::tm, "tm");
 		pico_ql_register(&Call::functions(), "fun_map");
-		while (pico_ql_serve(portno))
+		while (pico_ql_serve(CscoutOptions::portno))
 			;
 		return (0);
 	}
 #endif
 
-	if (process_mode == pm_call_graph) {
+	if (CscoutOptions::process_mode == pm_call_graph) {
 		cerr << "Producing call graphs for: ";
 		for (string d : call_graphs) cerr << d << " ";
 		cerr << endl;
@@ -3819,11 +3803,11 @@ main(int argc, char *argv[])
 
 	if (DP())
 		cout  << "Tokid EC map size is " << Tokid::map_size() << endl;
-	if (process_mode == pm_compile)
+	if (CscoutOptions::process_mode == pm_compile)
 		return (0);
 	// Serve web pages
 	if (!must_exit)
-		cerr << "CScout is now ready to serve you at http://localhost:" << portno << endl;
+		cerr << "CScout is now ready to serve you at http://localhost:" << CscoutOptions::portno << endl;
 	if (browse_only)
 		swill_setfork();
 	while (!must_exit)
@@ -3865,7 +3849,7 @@ garbage_collect(Fileid root)
 		Filedetails::set_required(fi, false);	// Mark the file as not being required
 		touched_files.insert(fi);
 
-		if (!monitor.is_valid()) {
+		if (!CscoutOptions::monitor.is_valid()) {
 			Filedetails::set_garbage_collected(fi, true);	// Mark the file as garbage collected
 			continue;
 		}
@@ -3891,7 +3875,7 @@ garbage_collect(Fileid root)
 				sum++;
 				Eclass *ec = ei->second;
 				IdPropElem ec_id(ec, Identifier());
-				if (!monitor.eval(ec_id)) {
+				if (!CscoutOptions::monitor.eval(ec_id)) {
 					count++;
 					ec->remove_from_tokid_map();
 					delete ec;
@@ -3913,7 +3897,7 @@ garbage_collect(Fileid root)
 	for (set <Fileid>::const_iterator i = touched_files.begin(); i != touched_files.end(); i++)
 		if (*i != root && *i != input_file_id)
 			Filedetails::set_includes(root, *i, /* directly included (conservatively) */ false, Filedetails::is_required(*i));
-	if (process_mode == pm_database)
+	if (CscoutOptions::process_mode == pm_database)
 		Fdep::dumpSql(Sql::getInterface(), cout, root);
 	Fdep::reset();
 
