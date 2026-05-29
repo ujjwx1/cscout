@@ -35,6 +35,7 @@ using namespace std;
 #include "tokid.h"
 #include "call.h"
 #include "idquery.h"
+#include "query.h"
 class GraphDisplay;
 
 /* Workspace modification state - tracks whether substitution or
@@ -120,5 +121,33 @@ void html_file_set_begin(FILE *of);
 void html_file_record_end(FILE *of);
 void html_file_end(FILE *of);
 void html_file(FILE *of, Fileid fi);
+void show_id_prop(FILE *fo, const string &name, bool val);
+void show_c_const(FILE *fo, Eclass *e);
+void display_files(FILE *of, const Query &query, const IFSet &sorted_files);
+template <typename container>
+void display_sorted(FILE *of, const Query &query, const container &sorted_ids);
+#define prohibit_remote_access(file)
+#define prohibit_browsers(file) \
+	do { \
+		if (browse_only) { \
+			nonbrowse_operation_prohibited(file); \
+			return 0; \
+		} \
+	} while (0)
+// Display loop progress (non-reentrant)
+template <typename container>
+static void
+progress(typename container::const_iterator i, const container &c)
+{
+	static int count, opercent;
+
+	if (i == c.begin())
+		count = 0;
+	int percent = ++count * 100 / c.size();
+	if (percent != opercent) {
+		cerr << '\r' << percent << '%' << flush;
+		opercent = percent;
+	}
+}
 
 #endif /* HTML_ */

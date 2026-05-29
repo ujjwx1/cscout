@@ -71,6 +71,8 @@
 #include "idquery.h"
 #include "funquery.h"
 #include "options.h"
+#include "pager.h"
+#include "timer.h"
 
 /* HTML interface state variables.
  * Declared extern in html.h so cscout.cpp can access them too. */
@@ -556,4 +558,347 @@ html_file(FILE *of, Fileid fi)
 	fprintf(of, "<td><a href=\"file.html?id=%u\">%s</a></td>",
 		fi.get_id(),
 		fname.c_str());
+}
+
+
+/*
+ * Display the sorted identifiers or functions, taking into account the reverse sort property
+ * for properly aligning the output.
+ */
+template <typename container>
+void
+display_sorted(FILE *of, const Query &query, const container &sorted_ids)
+{
+	if (Option::sort_rev->get())
+		fputs("<table><tr><td width=\"50%\" align=\"right\">\n", of);
+	else
+		fputs("<p>\n", of);
+
+	Pager pager(of, Option::entries_per_page->get(), query.base_url() + "&qi=1", query.bookmarkable());
+	typename container::const_iterator i;
+	for (i = sorted_ids.begin(); i != sorted_ids.end(); i++) {
+		if (pager.show_next()) {
+			html(of, **i);
+			fputs("<br>\n", of);
+		}
+	}
+
+	if (Option::sort_rev->get())
+		fputs("</td> <td width=\"50%\"> </td></tr></table>\n", of);
+	else
+		fputs("</p>\n", of);
+	pager.end();
+}
+
+/*
+ * Display the sorted functions with their metrics,
+ * taking into account the reverse sort property
+ * for properly aligning the output.
+ */
+void
+display_sorted_function_metrics(FILE *of, const FunQuery &query, const Sfuns &sorted_ids)
+{
+	fprintf(of, "<table class=\"metrics\"><tr>"
+	    "<th width='50%%' align='left'>Name</th>"
+	    "<th width='50%%' align='right'>%s</th>\n",
+	    Metrics::get_name<FunMetrics>(query.get_sort_order()).c_str());
+
+	Pager pager(of, Option::entries_per_page->get(), query.base_url() + "&qi=1", query.bookmarkable());
+	for (Sfuns::const_iterator i = sorted_ids.begin(); i != sorted_ids.end(); i++) {
+		if (pager.show_next()) {
+			fputs("<tr><td witdh='50%'>", of);
+			html(of, **i);
+			fprintf(of, "</td><td witdh='50%%' align='right'>%g</td></tr>\n",
+			    (*i)->get_pre_cpp_const_metrics().get_metric(query.get_sort_order()));
+		}
+	}
+	fputs("</table>\n", of);
+	pager.end();
+}
+
+
+// Identifier query page
+int
+iquery_page(FILE *of,  void *)
+{
+	html_head(of, "iquery", "Identifier Query");
+	fputs("<FORM ACTION=\"xiquery.html\" METHOD=\"GET\">\n"
+	"<input type=\"checkbox\" name=\"writable\" value=\"1\">Writable<br>\n", of);
+	for (int i = attr_begin; i < attr_end; i++)
+		fprintf(of, "<input type=\"checkbox\" name=\"a%d\" value=\"1\">%s<br>\n", i,
+			Attributes::name(i).c_str());
+	fputs(
+	"<input type=\"checkbox\" name=\"xfile\" value=\"1\">Crosses file boundary<br>\n"
+	"<input type=\"checkbox\" name=\"unused\" value=\"1\">Unused<br>\n"
+	"<p>\n"
+	"<input type=\"radio\" name=\"match\" value=\"Y\" CHECKED>Match any marked\n"
+	"&nbsp; &nbsp; &nbsp; &nbsp;\n"
+	"<input type=\"radio\" name=\"match\" value=\"L\">Match all marked\n"
+	"&nbsp; &nbsp; &nbsp; &nbsp;\n"
+	"<input type=\"radio\" name=\"match\" value=\"E\">Exclude marked\n"
+	"&nbsp; &nbsp; &nbsp; &nbsp;\n"
+	"<input type=\"radio\" name=\"match\" value=\"T\" >Exact match\n"
+	"<br><hr>\n"
+	"<table>\n"
+	"<tr><td>\n"
+	"Identifier names should "
+	"(<input type=\"checkbox\" name=\"xire\" value=\"1\"> not) \n"
+	" match RE\n"
+	"</td><td>\n"
+	"<INPUT TYPE=\"text\" NAME=\"ire\" SIZE=20 MAXLENGTH=256>\n"
+	"</td></tr>\n"
+	"<tr><td>\n"
+	"Select identifiers from filenames "
+	"(<input type=\"checkbox\" name=\"xfre\" value=\"1\"> not) \n"
+	" matching RE\n"
+	"</td><td>\n"
+	"<INPUT TYPE=\"text\" NAME=\"fre\" SIZE=20 MAXLENGTH=256>\n"
+	"</td></tr>\n"
+	"</table>\n"
+	"<hr>\n"
+	"<p>Query title <INPUT TYPE=\"text\" NAME=\"n\" SIZE=60 MAXLENGTH=256>\n"
+	"&nbsp;&nbsp;<INPUT TYPE=\"submit\" NAME=\"qi\" VALUE=\"Show identifiers\">\n"
+	"<INPUT TYPE=\"submit\" NAME=\"qf\" VALUE=\"Show files\">\n"
+	"<INPUT TYPE=\"submit\" NAME=\"qfun\" VALUE=\"Show functions\">\n"
+	"</FORM>\n"
+	, of);
+	html_tail(of);
+	return 0;
+}
+
+// Function query page
+int
+funquery_page(FILE *of,  void *)
+{
+	html_head(of, "funquery", "Function Query");
+	fputs("<FORM ACTION=\"xfunquery.html\" METHOD=\"GET\">\n"
+	"<input type=\"checkbox\" name=\"cfun\" value=\"1\">C function<br>\n"
+	"<input type=\"checkbox\" name=\"macro\" value=\"1\">Function-like macro<br>\n"
+	"<input type=\"checkbox\" name=\"writable\" value=\"1\">Writable declaration<br>\n"
+	"<input type=\"checkbox\" name=\"ro\" value=\"1\">Read-only declaration<br>\n"
+	"<input type=\"checkbox\" name=\"pscope\" value=\"1\">Project scope<br>\n"
+	"<input type=\"checkbox\" name=\"fscope\" value=\"1\">File scope<br>\n"
+	"<input type=\"checkbox\" name=\"defined\" value=\"1\">Defined<br>\n", of);
+	MQuery<FunMetrics, Call &>::metrics_query_form(of);
+	fputs("<p>"
+	"<input type=\"radio\" name=\"match\" value=\"Y\" CHECKED>Match any marked\n"
+	"&nbsp; &nbsp; &nbsp; &nbsp;\n"
+	"<input type=\"radio\" name=\"match\" value=\"L\">Match all marked\n"
+	"&nbsp; &nbsp; &nbsp; &nbsp;\n"
+	"<input type=\"radio\" name=\"match\" value=\"E\">Exclude marked\n"
+	"&nbsp; &nbsp; &nbsp; &nbsp;\n"
+	"<input type=\"radio\" name=\"match\" value=\"T\" >Exact match\n"
+	"<br><hr>\n"
+	"<table>\n"
+
+	"<tr><td>\n"
+	"Number of direct callers\n"
+	"<select name=\"ncallerop\" value=\"1\">\n",
+	of);
+	Query::equality_selection(of);
+	fputs(
+	"</td><td>\n"
+	"<INPUT TYPE=\"text\" NAME=\"ncallers\" SIZE=5 MAXLENGTH=10>\n"
+	"</td><td>\n"
+
+	"<tr><td>\n"
+	"Function names should "
+	"(<input type=\"checkbox\" name=\"xfnre\" value=\"1\"> not) \n"
+	" match RE\n"
+	"</td><td>\n"
+	"<INPUT TYPE=\"text\" NAME=\"fnre\" SIZE=20 MAXLENGTH=256>\n"
+	"</td></tr>\n"
+
+	"<tr><td>\n"
+	"Names of calling functions should "
+	"(<input type=\"checkbox\" name=\"xfure\" value=\"1\"> not) \n"
+	" match RE\n"
+	"</td><td>\n"
+	"<INPUT TYPE=\"text\" NAME=\"fure\" SIZE=20 MAXLENGTH=256>\n"
+	"</td></tr>\n"
+
+	"<tr><td>\n"
+	"Names of called functions should "
+	"(<input type=\"checkbox\" name=\"xfdre\" value=\"1\"> not) \n"
+	" match RE\n"
+	"</td><td>\n"
+	"<INPUT TYPE=\"text\" NAME=\"fdre\" SIZE=20 MAXLENGTH=256>\n"
+	"</td></tr>\n"
+
+	"<tr><td>\n"
+	"Select functions from filenames "
+	"(<input type=\"checkbox\" name=\"xfre\" value=\"1\"> not) \n"
+	" matching RE\n"
+	"</td><td>\n"
+	"<INPUT TYPE=\"text\" NAME=\"fre\" SIZE=20 MAXLENGTH=256>\n"
+	"</td></tr>\n"
+	"</table>\n"
+	"<hr>\n"
+	"<p>Query title <INPUT TYPE=\"text\" NAME=\"n\" SIZE=60 MAXLENGTH=256>\n"
+	"&nbsp;&nbsp;<INPUT TYPE=\"submit\" NAME=\"qi\" VALUE=\"Show functions\">\n"
+	"<INPUT TYPE=\"submit\" NAME=\"qf\" VALUE=\"Show files\">\n"
+	"</FORM>\n"
+	, of);
+	html_tail(of);
+	return 0;
+}
+
+void
+display_files(FILE *of, const Query &query, const IFSet &sorted_files)
+{
+	const string query_url(query.param_url());
+
+	fputs("<h2>Matching Files</h2>\n", of);
+	html_file_begin(of);
+	html_file_set_begin(of);
+	Pager pager(of, Option::entries_per_page->get(), query.base_url() + "&qf=1", query.bookmarkable());
+	for (IFSet::iterator i = sorted_files.begin(); i != sorted_files.end(); i++) {
+		Fileid f = *i;
+		if (current_project && !Filedetails::get_attribute(f, current_project))
+			continue;
+		if (pager.show_next()) {
+			html_file(of, *i);
+			fprintf(of, "<td><a href=\"qsrc.html?id=%u&%s\">marked source</a></td>",
+				f.get_id(),
+				query_url.c_str());
+			if (modification_state != ms_subst && !browse_only)
+				fprintf(of, "<td><a href=\"fedit.html?id=%u\">edit</a></td>",
+				f.get_id());
+			html_file_record_end(of);
+		}
+	}
+	html_file_end(of);
+	pager.end();
+}
+
+// Process an identifier query
+int
+xiquery_page(FILE *of,  void *)
+{
+	Timer timer;
+	prohibit_remote_access(of);
+
+	Sids sorted_ids;
+	IFSet sorted_files;
+	set <Call *> funs;
+	bool q_id = !!swill_getvar("qi");	// Show matching identifiers
+	bool q_file = !!swill_getvar("qf");	// Show matching files
+	bool q_fun = !!swill_getvar("qfun");	// Show matching functions
+	char *qname = swill_getvar("n");
+	IdQuery query(of, Option::file_icase->get(), current_project);
+
+	if (!query.is_valid()) {
+		html_tail(of);
+		return 0;
+	}
+
+	html_head(of, "xiquery", (qname && *qname) ? qname : "Identifier Query Results");
+	if (!CscoutOptions::quiet)
+	    cerr << "Evaluating identifier query" << endl;
+	for (IdProp::iterator i = Identifier::ids.begin(); i != Identifier::ids.end(); i++) {
+		progress(i, Identifier::ids);
+		if (!query.eval(*i))
+			continue;
+		if (q_id)
+			sorted_ids.insert(&*i);
+		else if (q_file) {
+			IFSet f = i->first->sorted_files();
+			sorted_files.insert(f.begin(), f.end());
+		} else if (q_fun) {
+			set <Call *> ecfuns(i->first->functions());
+			funs.insert(ecfuns.begin(), ecfuns.end());
+		}
+	}
+	if (!CscoutOptions::quiet)
+	    cerr << endl;
+	if (q_id) {
+		fputs("<h2>Matching Identifiers</h2>\n", of);
+		display_sorted(of, query, sorted_ids);
+	}
+	if (q_file)
+		display_files(of, query, sorted_files);
+	if (q_fun) {
+		fputs("<h2>Matching Functions</h2>\n", of);
+		Sfuns sorted_funs([](const Call *a, const Call *b) {
+			return Query::string_bi_compare(a->get_name(), b->get_name());
+		});
+		sorted_funs.insert(funs.begin(), funs.end());
+		display_sorted(of, query, sorted_funs);
+	}
+
+	timer.print_elapsed(of);
+	html_tail(of);
+	return 0;
+}
+
+// Process a function query
+int
+xfunquery_page(FILE *of,  void *)
+{
+	prohibit_remote_access(of);
+	Timer timer;
+
+	IFSet sorted_files;
+	bool q_id = !!swill_getvar("qi");	// Show matching identifiers
+	bool q_file = !!swill_getvar("qf");	// Show matching files
+	char *qname = swill_getvar("n");
+	FunQuery query(of, Option::file_icase->get(), current_project);
+	Sfuns sorted_funs(query.get_comparator());
+
+	if (!query.is_valid())
+		return 0;
+
+	html_head(of, "xfunquery", (qname && *qname) ? qname : "Function Query Results");
+	if (!CscoutOptions::quiet)
+	    cerr << "Evaluating function query" << endl;
+	for (Call::const_fmap_iterator_type i = Call::fbegin(); i != Call::fend(); i++) {
+		progress(i, Call::functions());
+		if (!query.eval(i->second))
+			continue;
+		if (q_id)
+			sorted_funs.insert(i->second);
+		if (q_file)
+			sorted_files.insert(i->second->get_fileid());
+	}
+	if (!CscoutOptions::quiet)
+	    cerr << endl;
+	if (q_id) {
+		fputs("<h2>Matching Functions</h2>\n", of);
+		if (query.get_sort_order() != -1)
+			display_sorted_function_metrics(of, query, sorted_funs);
+		else
+			display_sorted(of, query, sorted_funs);
+	}
+	if (q_file)
+		display_files(of, query, sorted_files);
+	timer.print_elapsed(of);
+	html_tail(of);
+	return 0;
+}
+
+// Display an identifier property
+void
+show_id_prop(FILE *fo, const string &name, bool val)
+{
+	if (!Option::show_true->get() || val)
+		fprintf(fo, ("<li>" + name + ": %s</li>\n").c_str(), val ? "Yes" : "No");
+}
+
+// Display whether a macro can be replaced by a C constant
+void
+show_c_const(FILE *fo, Eclass *e)
+{
+	bool val = !e->get_attribute(is_fun_macro)
+		&& !e->get_attribute(is_cpp_const)
+		&& !e->get_attribute(is_cpp_str_val)
+		&& ((e->get_attribute(is_def_c_const)
+			    && !e->get_attribute(is_def_not_c_const))
+		    || (e->get_attribute(is_exp_c_const)
+			    && !e->get_attribute(is_exp_not_c_const))
+		   );
+	fprintf(fo, "<li>Can be replaced by C constant: %s\n", val ? "Yes" : "No");
+	fprintf(fo, "<ul>\n");
+	for (int i = is_fun_macro; i <= is_exp_not_c_const; i++)
+		show_id_prop(fo, Attributes::name(i), e->get_attribute(i));
+	fprintf(fo, "</ul></li>\n");
 }
