@@ -26,6 +26,7 @@
 
 #include <string>
 #include <cstdio>
+#include <vector>
 
 using namespace std;
 
@@ -166,5 +167,37 @@ void visit_fcall_files(Fileid f, Call::const_fiterator_type (Call::*abegin)() co
 void explore_functions(FILE *fo, Call *f,
 	Call::const_fiterator_type (Call::*fbegin)() const,
 	Call::const_fiterator_type (Call::*fend)() const, int level);
+
+
+extern vector<Fileid> files;
+
+string version_info(bool html);
+
+/* RefFunCall class - function argument refactoring storage */
+class RefFunCall {
+private:
+	Call *fun;
+	string repl;
+	bool active;
+public:
+	typedef map <Eclass *, RefFunCall> store_type;
+	static store_type store;
+	RefFunCall(Call *f, string s) : fun(f), repl(s), active(true) {}
+	const Call *get_function() const { return fun; }
+	const string &get_replacement() const { return repl; }
+	void set_replacement(const string &s) { repl = s; }
+	bool is_active() const { return active; }
+	void set_active(bool a) { active = a; }
+};
+
+/* Globals defined in cscout.cpp, needed by HTML handlers */
+extern vector<Fileid> files;
+extern CompiledRE sfile_re;
+
+/* Functions defined in cscout.cpp, needed by HTML handlers */
+string version_info(bool html);
+bool is_function_call_replacement_valid(string::const_iterator begin,
+	string::const_iterator end, const char **error);
+void graph_handle(string name, int (*graph_fun)(GraphDisplay *));
 
 #endif /* HTML_ */
