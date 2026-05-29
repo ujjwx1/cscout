@@ -113,5 +113,12 @@ void html(FILE *of, const Call &c);
 void html_string(FILE *of, const string &s, Tokid t);
 void html_string(FILE *of, const Call *f);
 void file_hypertext(FILE *of, Fileid fi, bool eval_query);
+void change_prohibited(FILE *fo);
+void nonbrowse_operation_prohibited(FILE *fo);
+void html_file_begin(FILE *of);
+void html_file_set_begin(FILE *of);
+void html_file_record_end(FILE *of);
+void html_file_end(FILE *of);
+void html_file(FILE *of, Fileid fi);
 
 #endif /* HTML_ */
