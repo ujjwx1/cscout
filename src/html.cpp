@@ -902,3 +902,253 @@ show_c_const(FILE *fo, Eclass *e)
 		show_id_prop(fo, Attributes::name(i), e->get_attribute(i));
 	fprintf(fo, "</ul></li>\n");
 }
+
+
+/*
+ * Visit all functions associated with a call/caller relationship with f
+ * Call_path is an HTML string to print next to each function that
+ * leads to a page showing the function's call path.  A single %p
+ * in the string is used as a placeholder to fill the function's address.
+ * The methods to obtain the relationship containers are passed through
+ * the fbegin and fend method pointers.
+ * If recurse is true the list will also contain all correspondingly
+ * associated children functions.
+ * If show is true, then a function hyperlink is printed, otherwise
+ * only the visited flag is set to visit_id.
+ */
+void
+visit_functions(FILE *fo, const char *call_path, Call *f,
+	Call::const_fiterator_type (Call::*fbegin)() const,
+	Call::const_fiterator_type (Call::*fend)() const,
+	bool recurse, bool show, int level, int visit_id)
+{
+	if (level == 0)
+		return;
+
+	Call::const_fiterator_type i;
+
+	f->set_visited(visit_id);
+	for (i = (f->*fbegin)(); i != (f->*fend)(); i++) {
+		if (show && (!(*i)->is_visited(visit_id) || *i == f)) {
+			fprintf(fo, "<li> ");
+			html(fo, **i);
+			if (recurse && call_path)
+				fprintf(fo, call_path, *i);
+		}
+		if (recurse && !(*i)->is_visited(visit_id))
+			visit_functions(fo, call_path, *i, fbegin, fend, recurse, show, level - 1, visit_id);
+	}
+}
+
+/*
+ * Visit all files associated with a includes/included relationship with f
+ * The method to obtain the relationship container is passed through
+ * the get_map function pointer.
+ * The method to check if a file should be included in the visit is passed through the
+ * the is_ok method pointer.
+ * Set the visited flag for all nodes visited.
+ */
+void
+visit_include_files(Fileid f, const FileIncMap & (*get_map)(Fileid fi),
+    bool (IncDetails::*is_ok)() const, int level)
+{
+	if (level == 0)
+		return;
+
+	if (DP())
+		cout << "Visiting " << f.get_fname() << endl;
+	Filedetails::set_visited(f);
+	const FileIncMap &m = get_map(f);
+	for (FileIncMap::const_iterator i = m.begin(); i != m.end(); i++) {
+		if (!Filedetails::is_visited(i->first) && (i->second.*is_ok)())
+			visit_include_files(i->first, get_map, is_ok, level - 1);
+	}
+}
+
+/*
+ * Visit all files associated with a global variable def/ref relationship with f
+ * The method to obtain the relationship container is passed through
+ * the get_fileid_set method pointer.
+ * Set the visited flag for all nodes visited.
+ */
+void
+visit_globobj_files(Fileid f, const Fileidset & (*get_fileid_set)(Fileid fi),
+		int level)
+{
+	if (level == 0)
+		return;
+
+	if (DP())
+		cout << "Visiting " << f.get_fname() << endl;
+	Filedetails::set_visited(f);
+	const Fileidset &s = get_fileid_set(f);
+	for (Fileidset::const_iterator i = s.begin(); i != s.end(); i++) {
+		if (!Filedetails::is_visited(*i))
+			visit_globobj_files(*i, get_fileid_set, level - 1);
+	}
+}
+
+/*
+ * Visit all files associated with a function call relationship with f
+ * (a control dependency).
+ * The methods to obtain the relationship iterators are passed through
+ * the abegin and aend method pointers.
+ * Set the visited flag for all nodes visited and the edges matrix for
+ * the corresponding edges.
+ */
+void
+visit_fcall_files(Fileid f, Call::const_fiterator_type (Call::*abegin)() const, Call::const_fiterator_type (Call::*aend)() const, int level, EdgeMatrix &edges)
+{
+	if (level == 0)
+		return;
+
+	if (DP())
+		cout << "Visiting " << f.get_fname() << endl;
+	Filedetails::set_visited(f);
+	/*
+	 * For every function in this file:
+	 * for every function associated with this function
+	 * set the edge and visit the corresponding files.
+	 */
+	for (FCallSet::const_iterator filefun = Filedetails::get_functions(f).begin(); filefun != Filedetails::get_functions(f).end(); filefun++) {
+		if (!(*filefun)->is_cfun())
+			continue;
+		for (Call::const_fiterator_type afun = ((*filefun)->*abegin)(); afun != ((*filefun)->*aend)(); afun++)
+			if ((*afun)->is_defined() && (*afun)->is_cfun()) {
+				Fileid f2((*afun)->get_definition().get_fileid());
+				edges[f.get_id()][f2.get_id()] = true;
+				if (!Filedetails::is_visited(f2))
+					visit_fcall_files(f2, abegin, aend, level - 1, edges);
+			}
+	}
+}
+
+
+extern "C" { const char *swill_getquerystring(void); }
+
+/*
+ * Print a list of callers or called functions for the given function,
+ * recursively expanding functions that the user has specified.
+ */
+void
+explore_functions(FILE *fo, Call *f,
+	Call::const_fiterator_type (Call::*fbegin)() const,
+	Call::const_fiterator_type (Call::*fend)() const,
+	int level)
+{
+	Call::const_fiterator_type i;
+
+	for (i = (f->*fbegin)(); i != (f->*fend)(); i++) {
+		fprintf(fo, "<div style=\"margin-left: %dem\">", level * 2);
+		if (((*i)->*fbegin)() != ((*i)->*fend)()) {
+			/* Functions below; create +/- hyperlink. */
+			char param[1024];
+			snprintf(param, sizeof(param), "f%02d%p", level, (void *)&(**i));
+			char *pval = swill_getvar(param);
+
+			if (pval) {
+				// Colapse hyperlink
+				string nquery(swill_getquerystring());
+				string::size_type start = nquery.find(param);
+				if (start != string::npos && start > 0)
+					// Erase &param=1 (i.e. param + 3 chars)
+					nquery.erase(start - 1, strlen(param) + 3);
+				fprintf(fo, "<table class=\"box\"> <tr><th><a class=\"plain\" href=\"%s?%s\">&ndash;</a></th><td>",
+				    swill_getvar("__uri__"), nquery.c_str());
+			} else
+				// Expand hyperlink
+				fprintf(fo, "<table class=\"box\"> <tr><th><a class=\"plain\" href=\"%s?%s&%s=1\">+</a></th><td>",
+				    swill_getvar("__uri__"),
+				    swill_getquerystring(), param);
+			html(fo, **i);
+			fputs("</td></tr></table></div>\n", fo);
+			if (pval && *pval == '1')
+				explore_functions(fo, *i, fbegin, fend, level + 1);
+		} else {
+			/* No functions below. Just display the function. */
+			fputs("<table class=\"unbox\"> <tr><th></th><td>", fo);
+			html(fo, **i);
+			fputs("</td></tr></table></div>\n", fo);
+		}
+	}
+}
+
+// List of functions associated with a given one
+int
+funlist_page(FILE *fo, void *)
+{
+	Call *f;
+	char buff[256];
+
+	char *ltype = swill_getvar("n");
+	if (!swill_getargs("p(f)", &f) || !ltype) {
+		fprintf(fo, "Missing value");
+		return 0;
+	}
+	html_head(fo, "funlist", "Function List");
+	fprintf(fo, "<h2>Function ");
+	html(fo, *f);
+	fprintf(fo, "</h2>");
+	const char *calltype;
+	bool recurse;
+	switch (*ltype) {
+	case 'u': case 'd':
+		calltype = "directly";
+		recurse = false;
+		break;
+	case 'U': case 'D':
+		calltype = "all";
+		recurse = true;
+		break;
+	default:
+		fprintf(fo, "Illegal value");
+		return 0;
+	}
+	// Pointers to the ...begin and ...end methods
+	Call::const_fiterator_type (Call::*fbegin)() const;
+	Call::const_fiterator_type (Call::*fend)() const;
+	switch (*ltype) {
+	default:
+	case 'u':
+	case 'U':
+		fbegin = &Call::caller_begin;
+		fend = &Call::caller_end;
+		fprintf(fo, "List of %s calling functions\n", calltype);
+		snprintf(buff, sizeof(buff), " &mdash; <a href=\"cpath%s?from=%%p&to=%p\">call path from function</a>", graph_suffix(), (void *)f);
+		break;
+	case 'd':
+	case 'D':
+		fbegin = &Call::call_begin;
+		fend = &Call::call_end;
+		fprintf(fo, "List of %s called functions\n", calltype);
+		snprintf(buff, sizeof(buff), " &mdash; <a href=\"cpath%s?from=%p&to=%%p\">call path to function</a>", graph_suffix(), (void *)f);
+		break;
+	}
+	if (swill_getvar("e")) {
+		fprintf(fo, "<br />\n");
+		explore_functions(fo, f, fbegin, fend, 0);
+	} else {
+		fprintf(fo, "<ul>\n");
+		Call::clear_visit_flags();
+		visit_functions(fo, buff, f, fbegin, fend, recurse, true, Option::cgraph_depth->get());
+		fprintf(fo, "</ul>\n");
+	}
+	html_tail(fo);
+	return 0;
+}
+
+// Return the page suffix for the select call graph type
+const char *
+graph_suffix()
+{
+	switch (Option::cgraph_type->get()) {
+	case 't': return ".txt";
+	case 'h': return ".html";
+	case 'd': return "_dot.txt";
+	case 's': return ".svg";
+	case 'g': return ".gif";
+	case 'p': return ".png";
+	case 'f': return ".pdf";
+	}
+	return "";
+}

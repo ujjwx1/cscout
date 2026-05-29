@@ -149,5 +149,22 @@ progress(typename container::const_iterator i, const container &c)
 		opercent = percent;
 	}
 }
+/* Type for storing graph edge matrices */
+typedef vector<vector<bool> > EdgeMatrix;
+
+/* Graph helper functions */
+const char *graph_suffix();
+void visit_functions(FILE *fo, const char *call_path, Call *f,
+	Call::const_fiterator_type (Call::*fbegin)() const,
+	Call::const_fiterator_type (Call::*fend)() const,
+	bool recurse, bool show, int level, int visit_id = 1 );
+void visit_include_files(Fileid f, const FileIncMap & (*get_map)(Fileid fi),
+	bool (IncDetails::*is_ok)() const, int level);
+void visit_globobj_files(Fileid f, const Fileidset & (*get_fileid_set)(Fileid fi), int level);
+void visit_fcall_files(Fileid f, Call::const_fiterator_type (Call::*abegin)() const,
+	Call::const_fiterator_type (Call::*aend)() const, int level, EdgeMatrix &edges);
+void explore_functions(FILE *fo, Call *f,
+	Call::const_fiterator_type (Call::*fbegin)() const,
+	Call::const_fiterator_type (Call::*fend)() const, int level);
 
 #endif /* HTML_ */
