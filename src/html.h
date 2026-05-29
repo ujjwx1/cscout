@@ -34,6 +34,7 @@ using namespace std;
 #include "compiledre.h"
 #include "tokid.h"
 #include "call.h"
+#include "idquery.h"
 class GraphDisplay;
 
 /* Workspace modification state - tracks whether substitution or
@@ -106,5 +107,11 @@ int funargrefs_page(FILE *of, void *);
 int xfunargrefs_page(FILE *of, void *p);
 int write_quit_page(FILE *of, void *exit);
 int quit_page(FILE *of, void *);
+/* HTML rendering helpers - used by handlers in cscout.cpp and html.cpp */
+void html(FILE *of, const IdPropElem &i);
+void html(FILE *of, const Call &c);
+void html_string(FILE *of, const string &s, Tokid t);
+void html_string(FILE *of, const Call *f);
+void file_hypertext(FILE *of, Fileid fi, bool eval_query);
 
 #endif /* HTML_ */

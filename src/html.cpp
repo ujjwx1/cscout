@@ -68,6 +68,9 @@
 #include "fileutils.h"
 #include "option.h"
 #include "attr.h"
+#include "idquery.h"
+#include "funquery.h"
+#include "options.h"
 
 /* HTML interface state variables.
  * Declared extern in html.h so cscout.cpp can access them too. */
@@ -309,4 +312,171 @@ html_error(FILE *of, const string &error_msg)
 	fputs("</p><p>The operation you requested is incomplete.  "
 		"Please correct the underlying cause, and (if possible) return to the "
 		"CScout <a href=\"index.html\">main page</a> to retry the operation.</p>", of);
+}
+
+
+// Display an identifier hyperlink
+void
+html(FILE *of, const IdPropElem &i)
+{
+	fprintf(of, "<a href=\"id.html?id=%p\">", (void *)i.first);
+	html_string(of, (i.second).get_id());
+	fputs("</a>", of);
+}
+
+void
+html(FILE *of, const Call &c)
+{
+	fprintf(of, "<a href=\"fun.html?f=%p\">", (void *)&c);
+	html_string(of, c.get_name());
+	fputs("</a>", of);
+}
+
+// Display a hyperlink based on a string and its starting tokid
+void
+html_string(FILE *of, const string &s, Tokid t)
+{
+	int len = s.length();
+	for (int pos = 0; pos < len;) {
+		Eclass *ec = t.get_ec();
+		Identifier id(ec, s.substr(pos, ec->get_len()));
+		const IdPropElem ip(ec, id);
+		html(of, ip);
+		pos += ec->get_len();
+		t += ec->get_len();
+		if (pos < len)
+			fprintf(of, "][");
+	}
+}
+
+// Display hyperlinks to a function's identifiers
+void
+html_string(FILE *of, const Call *f)
+{
+	int start = 0;
+	for (dequeTpart::const_iterator i = f->get_token().get_parts_begin(); i != f->get_token().get_parts_end(); i++) {
+		Tokid t = i->get_tokid();
+		putc('[', of);
+		html_string(of, f->get_name().substr(start, i->get_len()), t);
+		putc(']', of);
+		start += i->get_len();
+	}
+}
+
+
+
+// Display the contents of a file in hypertext form
+void
+file_hypertext(FILE *of, Fileid fi, bool eval_query)
+{
+	istream *in;
+	const string &fname = fi.get_path();
+	bool at_bol = true;
+	int line_number = 1;
+	bool mark_unprocessed = !!swill_getvar("marku");
+
+	/*
+	 * In theory this could be handled by adding a class
+	 * factory method to Query, and making eval virtual.
+	 * In practice the IdQuery and FunQuery eval methods
+	 * take incompatible arguments, and are difficult to
+	 * reconcile.
+	 */
+	IdQuery idq;
+	FunQuery funq;
+	bool have_funq, have_idq;
+	char *qtype = swill_getvar("qt");
+	have_funq = have_idq = false;
+	if (!qtype || strcmp(qtype, "id") == 0) {
+		idq = IdQuery(of, Option::file_icase->get(), current_project, eval_query);
+		have_idq = true;
+	} else if (strcmp(qtype, "fun") == 0) {
+		funq = FunQuery(of, Option::file_icase->get(), current_project, eval_query);
+		have_funq = true;
+	} else {
+		fprintf(stderr, "Unknown query type (try adding &qt=id to the URL).\n");
+		return;
+	}
+
+	if (DP())
+		cout << "Write to " << fname << endl;
+	if (Filedetails::is_hand_edited(fi)) {
+		in = new istringstream(Filedetails::get_original_contents(fi));
+		fputs("<p>This file has been edited by hand. The following code reflects the contents before the first CScout-invoked hand edit.</p>", of);
+	} else {
+		in = new ifstream(fname.c_str(), ios::binary);
+		if (in->fail()) {
+			html_perror(of, "Unable to open " + fname + " for reading");
+			return;
+		}
+	}
+	fputs("<hr><code>", of);
+	(void)html('\n');	// Reset HTML tab handling
+	// Go through the file character by character
+	for (;;) {
+		Tokid ti;
+		int val;
+
+		ti = Tokid(fi, in->tellg());
+		if ((val = in->get()) == EOF)
+			break;
+		if (at_bol) {
+			fprintf(of,"<a name=\"%d\"></a>", line_number);
+			if (mark_unprocessed && !Filedetails::is_line_processed(fi, line_number))
+				fprintf(of, "<span class=\"unused\">");
+			if (Option::show_line_number->get()) {
+				char buff[50];
+				snprintf(buff, sizeof(buff), "%5d ", line_number);
+				// Do not go via HTML string to keep tabs ok
+				for (char *s = buff; *s; s++)
+					if (*s == ' ')
+						fputs("&nbsp;", of);
+					else
+						fputc(*s, of);
+			}
+			at_bol = false;
+		}
+		// Identifier we can mark
+		Eclass *ec;
+		if (have_idq && (ec = ti.check_ec()) && ec->is_identifier() && idq.need_eval()) {
+			string s;
+			s = (char)val;
+			int len = ec->get_len();
+			for (int j = 1; j < len; j++)
+				s += (char)in->get();
+			Identifier i(ec, s);
+			const IdPropElem ip(ec, i);
+			if (idq.eval(ip))
+				html(of, ip);
+			else
+				html_string(of, s);
+			continue;
+		}
+		// Function we can mark
+		if (have_funq && funq.need_eval()) {
+			pair <Call::const_fmap_iterator_type, Call::const_fmap_iterator_type> be(Call::get_calls(ti));
+			Call::const_fmap_iterator_type ci;
+			for (ci = be.first; ci != be.second; ci++)
+				if (funq.eval(ci->second)) {
+					string s;
+					s = (char)val;
+					int len = ci->second->get_name().length();
+					for (int j = 1; j < len; j++)
+						s += (char)in->get();
+					html(of, *(ci->second));
+					break;
+				}
+			if (ci != be.second)
+				continue;
+		}
+		fprintf(of, "%s", html((char)val));
+		if ((char)val == '\n') {
+			at_bol = true;
+			if (mark_unprocessed && !Filedetails::is_line_processed(fi, line_number))
+				fprintf(of, "</span>");
+			line_number++;
+		}
+	}
+	delete in;
+	fputs("<hr></code>", of);
 }
