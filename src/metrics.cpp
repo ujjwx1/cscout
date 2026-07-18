@@ -60,6 +60,7 @@ Metrics::metric_details_values()
 	v[em_bracenest]		= MetricDetails(1, 0, 0, "BRACENEST",	"Dangling brace nesting");
 	v[em_bracknest]		= MetricDetails(1, 0, 0, "BRACKNEST",	"Dangling bracket nesting");
 	v[em_nuline]		= MetricDetails(1, 0, 1, "NULINE",	"Number of unprocessed lines");
+	v[em_nprocessed]	= MetricDetails(1, 1, 1, "NPROCESSED",	"Number of times processed");
 
 	v[em_ntoken]		= MetricDetails(1, 1, 1, "NTOKEN",	"Number of tokens");
 	v[em_nppdirective]	= MetricDetails(1, 0, 1, "NPPDIRECTIVE","Number of C preprocessor directives");

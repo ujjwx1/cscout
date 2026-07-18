@@ -76,6 +76,7 @@ Fchar::set_input(const string& s)
 		cout << "set input " << s << " fi: " << fi.get_path() << "\n";
 	line_number = 1;
 	yacc_file = (s[s.length() - 1] == 'y');
+	Filedetails::get_pre_cpp_metrics(fi).add_metric(Metrics::em_nprocessed, 1);
 	Pdtoken::file_switch();
 }
 

@@ -845,6 +845,7 @@ Pdtoken::process_define(bool is_immutable)
 	bool is_function = (t.get_code() == '(');
 	Macro m(nametok, true, is_function, is_immutable);
 	if (is_function) {
+		m.get_mcall()->get_pre_cpp_metrics().add_metric(Metrics::em_nprocessed, 1);
 		// Function-like macro
 		Metrics::call_pre_cpp_metrics(&Metrics::add_ppfmacro);
 		m.set_is_vararg(false);

@@ -162,6 +162,7 @@ public:
 		em_bracenest,		// Dangling brace nesting
 		em_bracknest,		// Dangling bracket nesting
 		em_nuline,		// Number of unprocessed lines
+		em_nprocessed,		// Number of times processed
 
 	// During processing (once based on processed)
 		em_nppdirective,	// Number of cpp directives

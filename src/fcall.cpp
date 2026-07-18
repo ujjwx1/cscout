@@ -105,6 +105,7 @@ FCall::set_current_fun(const Type &t)
 	cfun->mark_begin();
 	cfun->definition = t.get_token().get_defining_tokid();
 	cfun->defined = true;
+	cfun->get_pre_cpp_metrics().add_metric(Metrics::em_nprocessed, 1);
 	if (DP()) {
 		cout << "Current function " << id->get_name() << "\n";
 		cout << "Type: " << t << "\n";

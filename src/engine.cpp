@@ -102,6 +102,7 @@ CscoutEngine::file_analyze(Fileid fi)
 	fifstream in;
 	bool has_unused = false;
 	const string &fname = fi.get_path();
+	Filedetails::get_post_cpp_metrics(fi).add_metric(Metrics::em_nprocessed, 1);
 	int line_number = 0;
 
 
@@ -146,6 +147,7 @@ CscoutEngine::file_analyze(Fileid fi)
 			if (cfun)
 				fun_nesting.push(cfun);
 			cfun = *fci;
+			cfun->get_post_cpp_metrics().add_metric(Metrics::em_nprocessed, 1);
 			fci++;
 		}
 
