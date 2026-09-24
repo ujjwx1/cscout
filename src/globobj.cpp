@@ -55,6 +55,7 @@
 #include "mcall.h"
 #include "eclass.h"
 #include "sql.h"
+#include "workdb.h"
 #include "globobj.h"
 
 // All global objects
@@ -108,4 +109,21 @@ GlobObj::GlobObj(const Token &t, Type typ, const string &s) :
 	if (DP())
 		cout << "Construct new globobj for " << s << endl;
 	all.insert(glob_map::value_type(t.get_parts_begin()->get_tokid(), this));
+}
+
+// Dump for each global object the files defining it and the files using it
+void
+GlobObj::dumpSql(Sql *db, ostream &of)
+{
+	if (!table_is_enabled(t_globuses))
+		return;
+
+	for (glob_map::const_iterator i = all.begin(); i != all.end(); i++)
+		for (set <Fileid>::const_iterator def = i->second->defined.begin(); def != i->second->defined.end(); def++)
+			for (set <Fileid>::const_iterator ref = i->second->used.begin(); ref != i->second->used.end(); ref++)
+				if (*ref != *def)
+					of << "INSERT INTO GLOBUSES VALUES('" <<
+					    db->escape(i->second->get_name()) << "'," <<
+					    def->get_id() << ',' <<
+					    ref->get_id() << ");\n";
 }
